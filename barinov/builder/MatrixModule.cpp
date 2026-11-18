@@ -1,4 +1,5 @@
-﻿#pragma hdrstop
+﻿//---------------------------------------------------------------------------
+#pragma hdrstop
 
 #include "MatrixModule.h"
 
@@ -6,10 +7,11 @@
 #include <System.IOUtils.hpp>
 
 #pragma package(smart_init)
+//---------------------------------------------------------------------------
 
+// ---- Внутренние (невидимые снаружи) вспомогательные функции ----
 
-// Настройки формата: десятичный разделитель - всегда точка,
-// независимо от региональных настроек Windows.
+// Десятичный разделитель - всегда точка, независимо от региональных настроек.
 static TFormatSettings MakeFormatSettings()
 {
     TFormatSettings fs = TFormatSettings::Create();
@@ -23,11 +25,10 @@ static bool IsSpace(wchar_t c)
            c == L'\v' || c == L'\f';
 }
 
-
-// Читает матрицу из массива строк. Вся информация об ошибке - в info.
+// Разбор массива строк в матрицу. Вся информация об ошибке - в info.
 static void ReadMatrix(const TStringDynArray& lines, TMatrix& matrix, TErrorInfo& info)
 {
-	const TFormatSettings fs = MakeFormatSettings();
+    const TFormatSettings fs = MakeFormatSettings();
     int width = 0;
 
     for (int lineIdx = 0; lineIdx < lines.Length; ++lineIdx) {
@@ -35,8 +36,8 @@ static void ReadMatrix(const TStringDynArray& lines, TMatrix& matrix, TErrorInfo
         const String& line = lines[lineIdx];
         const int n = line.Length();
 
-        DynamicArray<double> row;       // пустой, Length = 0
-        int i = 1;                      // символы String нумеруются с 1
+        DynamicArray<double> row;
+        int i = 1;                          // символы String нумеруются с 1
 
         while (true) {
             while (i <= n && IsSpace(line[i]))
@@ -61,7 +62,7 @@ static void ReadMatrix(const TStringDynArray& lines, TMatrix& matrix, TErrorInfo
         }
 
         if (row.Length == 0)
-            continue;                   // пустая строка пропускается
+            continue;                       // пустая строка пропускается
 
         if (matrix.Length == 0) {
             width = row.Length;
@@ -75,19 +76,18 @@ static void ReadMatrix(const TStringDynArray& lines, TMatrix& matrix, TErrorInfo
         }
 
         matrix.Length = matrix.Length + 1;
-        matrix[matrix.Length - 1] = row;    // row создан в этом проходе, делить его не с кем
+        matrix[matrix.Length - 1] = row;
     }
 
     if (matrix.Length == 0)
         info.code = errEmptyFile;
 }
 
-
-// Экспортируемые функции
+// ---- Экспортируемые функции ----
 
 bool LoadMatrixFromFile(const String& fileName, TMatrix& matrix, TErrorInfo* errInfo)
 {
-    TErrorInfo info = TErrorInfo();      // обнуляет и code (= errSuccess), и всё объединение
+    TErrorInfo info = TErrorInfo();      // обнуляет и code (= errSuccess), и объединение
     matrix.Length = 0;
 
     TStringDynArray lines;
@@ -113,7 +113,7 @@ bool LoadMatrixFromFile(const String& fileName, TMatrix& matrix, TErrorInfo* err
     if (errInfo != nullptr)
         *errInfo = info;                 // выходные данные согласованы для каждого исхода
 
-    return info.code == errSuccess;
+    return info.code == errSuccess;      // динамические массивы освобождаются сами
 }
 
 bool FindMinMax(const TMatrix& matrix, double& minVal, double& maxVal)
@@ -161,11 +161,12 @@ String MatrixToString(const TMatrix& matrix, int width, int precision)
         for (int j = 0; j < matrix[i].Length; j++) {
             String num = FloatToStrF(static_cast<Extended>(matrix[i][j]),
                                      TFloatFormat::ffFixed, 18, precision, fs);
-            if (num.Length() < width)                       // выравнивание по правому краю
+            if (num.Length() < width)               // выравнивание по правому краю
                 num = StringOfChar(L' ', width - num.Length()) + num;
             text += num;
         }
-        text += sLineBreak;
+        text += sLineBreak;                         // конец строки матрицы
     }
     return text;
 }
+
