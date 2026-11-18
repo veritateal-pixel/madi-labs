@@ -1,5 +1,10 @@
 #pragma hdrstop
 
+#pragma comment(lib, "rtl.bpi")   // подключает Delphi RTL (DynamicArray, String, SysUtils, IOUtils)
+
+#include <System.hpp>
+
+#include <System.SysUtils.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <limits>
@@ -10,6 +15,12 @@
 
 #pragma argsused
 using namespace std;
+
+// Вывод String в консоль (кодовая страница консоли - 1251)
+void vyvod(const String& s)
+{
+    cout << AnsiStringT<1251>(s).c_str();
+}
 
 void zavershit_pri_konce_vvoda()
 {
@@ -39,13 +50,14 @@ int proverka_v(const string& zapros, int min_v, int max_v)
     }
 }
 
-string vvod_im()
+String vvod_im()
 {
     string put;
     cout << "Введите имя текстового файла с матрицей: ";
     if (!getline(cin, put))
         zavershit_pri_konce_vvoda();
-    return put;
+    // консольный ввод в cp1251 -> UnicodeString
+    return String(AnsiStringT<1251>(put.c_str()));
 }
 
 void soobshchit_ob_oshibke(const TErrorInfo& err)
@@ -74,15 +86,15 @@ void soobshchit_ob_oshibke(const TErrorInfo& err)
 
 int main()
 {
-	SetConsoleOutputCP(1251);
-	SetConsoleCP(1251);
+    SetConsoleOutputCP(1251);
+    SetConsoleCP(1251);
 
     bool povtor = true;
     while (povtor) {
         TMatrix ishodnaya;
 
         while (true) {
-            string imya = vvod_im();
+            String imya = vvod_im();
             TErrorInfo err;
             if (LoadMatrixFromFile(imya, ishodnaya, &err))
                 break;
@@ -90,10 +102,11 @@ int main()
             cout << "Исправьте файл или укажите другой.\n\n";
         }
 
-        cout << "\nУспешно загружена матрица размером " << ishodnaya.size()
-             << "x" << ishodnaya[0].size() << ".\n";
+        cout << "\nУспешно загружена матрица размером " << ishodnaya.Length
+             << "x" << ishodnaya[0].Length << ".\n";
 
-        cout << "\nИсходная матрица:\n" << MatrixToString(ishodnaya);
+        cout << "\nИсходная матрица:\n";
+        vyvod(MatrixToString(ishodnaya));
 
         double minV = 0, maxV = 0;
         FindMinMax(ishodnaya, minV, maxV);
@@ -105,8 +118,8 @@ int main()
 
         TMatrix rezultat = AddToRowsExcept(ishodnaya, P, 3);
 
-        cout << "\nНовая матрица (ко всем строкам, кроме 4-й, прибавлено P):\n"
-             << MatrixToString(rezultat);
+        cout << "\nНовая матрица (ко всем строкам, кроме 4-й, прибавлено P):\n";
+        vyvod(MatrixToString(rezultat));
 
         cout << "\n";
     }

@@ -2,79 +2,113 @@
 
 #include "MatrixModule.h"
 
-#include <fstream>
-#include <iomanip>
-#include <sstream>
+#include <System.SysUtils.hpp>
+#include <System.IOUtils.hpp>
+
+#pragma package(smart_init)
 
 
-static bool ParseDouble(const std::string& token, double& value)
+// Настройки формата: десятичный разделитель - всегда точка,
+// независимо от региональных настроек Windows.
+static TFormatSettings MakeFormatSettings()
 {
-    std::istringstream ss(token);
-    ss >> value;
-    return !ss.fail() && ss.eof();
+    TFormatSettings fs = TFormatSettings::Create();
+    fs.DecimalSeparator = L'.';
+    return fs;
+}
+
+static bool IsSpace(wchar_t c)
+{
+    return c == L' ' || c == L'\t' || c == L'\r' || c == L'\n' ||
+           c == L'\v' || c == L'\f';
 }
 
 
-static void ReadMatrix(std::istream& in, TMatrix& matrix, TErrorInfo& info)
+// Читает матрицу из массива строк. Вся информация об ошибке - в info.
+static void ReadMatrix(const TStringDynArray& lines, TMatrix& matrix, TErrorInfo& info)
 {
-    std::string line;
-    int lineNo = 0;
-    size_t width = 0;
+	const TFormatSettings fs = MakeFormatSettings();
+    int width = 0;
 
-    while (std::getline(in, line)) {
-        ++lineNo;
+    for (int lineIdx = 0; lineIdx < lines.Length; ++lineIdx) {
+        const int lineNo = lineIdx + 1;
+        const String& line = lines[lineIdx];
+        const int n = line.Length();
 
-        std::istringstream ls(line);
-        std::vector<double> row;
-        std::string token;
+        DynamicArray<double> row;       // пустой, Length = 0
+        int i = 1;                      // символы String нумеруются с 1
 
-        while (ls >> token) {
+        while (true) {
+            while (i <= n && IsSpace(line[i]))
+                ++i;
+            if (i > n)
+                break;
+
+            int start = i;
+            while (i <= n && !IsSpace(line[i]))
+                ++i;
+            String token = line.SubString(start, i - start);
+
             double value = 0;
-            if (!ParseDouble(token, value)) {
+            if (!TryStrToFloat(token, value, fs)) {
                 info.code = errInvalidElement;
                 info.invalidElement.line = lineNo;
-                info.invalidElement.column = static_cast<int>(row.size()) + 1;
+                info.invalidElement.column = row.Length + 1;
                 return;
             }
-            row.push_back(value);
+            row.Length = row.Length + 1;
+            row[row.Length - 1] = value;
         }
 
-        if (row.empty())
-            continue;
+        if (row.Length == 0)
+            continue;                   // пустая строка пропускается
 
-        if (matrix.empty()) {
-            width = row.size();
+        if (matrix.Length == 0) {
+            width = row.Length;
         }
-        else if (row.size() != width) {
+        else if (row.Length != width) {
             info.code = errNotRectangular;
             info.notRectangular.line = lineNo;
-            info.notRectangular.expected = static_cast<int>(width);
-            info.notRectangular.found = static_cast<int>(row.size());
+            info.notRectangular.expected = width;
+            info.notRectangular.found = row.Length;
             return;
         }
-        matrix.push_back(row);
+
+        matrix.Length = matrix.Length + 1;
+        matrix[matrix.Length - 1] = row;    // row создан в этом проходе, делить его не с кем
     }
 
-    if (matrix.empty())
+    if (matrix.Length == 0)
         info.code = errEmptyFile;
 }
 
 
 // Экспортируемые функции
 
-bool LoadMatrixFromFile(const std::string& fileName, TMatrix& matrix, TErrorInfo* errInfo)
+bool LoadMatrixFromFile(const String& fileName, TMatrix& matrix, TErrorInfo* errInfo)
 {
     TErrorInfo info = TErrorInfo();      // обнуляет и code (= errSuccess), и всё объединение
-    matrix.clear();
+    matrix.Length = 0;
 
-    std::ifstream f(fileName.c_str());   // закроется сам при выходе из функции
-    if (!f.is_open())
+    TStringDynArray lines;
+    bool opened = false;
+    try {
+        if (TFile::Exists(fileName)) {
+            lines = TFile::ReadAllLines(fileName);
+            opened = true;
+        }
+    }
+    catch (const Exception&) {
+        opened = false;
+    }
+
+    if (!opened)
         info.code = errFileNotFound;
     else
-        ReadMatrix(f, matrix, info);
+        ReadMatrix(lines, matrix, info);
 
     if (info.code != errSuccess)
-        matrix.clear();                  // при ошибке матрица всегда пуста
+        matrix.Length = 0;               // при ошибке матрица всегда пуста
 
     if (errInfo != nullptr)
         *errInfo = info;                 // выходные данные согласованы для каждого исхода
@@ -84,12 +118,12 @@ bool LoadMatrixFromFile(const std::string& fileName, TMatrix& matrix, TErrorInfo
 
 bool FindMinMax(const TMatrix& matrix, double& minVal, double& maxVal)
 {
-    if (matrix.empty() || matrix[0].empty())
+    if (matrix.Length == 0 || matrix[0].Length == 0)
         return false;
 
     minVal = maxVal = matrix[0][0];
-    for (size_t i = 0; i < matrix.size(); i++) {
-        for (size_t j = 0; j < matrix[i].size(); j++) {
+    for (int i = 0; i < matrix.Length; i++) {
+        for (int j = 0; j < matrix[i].Length; j++) {
             if (matrix[i][j] < minVal) minVal = matrix[i][j];
             if (matrix[i][j] > maxVal) maxVal = matrix[i][j];
         }
@@ -103,26 +137,35 @@ double ComputeP(double minVal, double maxVal)
     return s * s;   // P = (Amin + Amax)^2
 }
 
-TMatrix AddToRowsExcept(const TMatrix& source, double p, size_t skipRow)
+TMatrix AddToRowsExcept(const TMatrix& source, double p, int skipRow)
 {
-    TMatrix result = source;
-    for (size_t i = 0; i < result.size(); i++) {
-        if (i == skipRow)
-            continue;
-        for (size_t j = 0; j < result[i].size(); j++)
-            result[i][j] += p;
+    // Полная (глубокая) копия: каждая строка выделяется заново,
+    // поэтому исходная матрица не затрагивается.
+    TMatrix result;
+    result.Length = source.Length;
+
+    for (int i = 0; i < source.Length; i++) {
+        result[i].Length = source[i].Length;
+        for (int j = 0; j < source[i].Length; j++)
+            result[i][j] = (i == skipRow) ? source[i][j] : source[i][j] + p;
     }
     return result;
 }
 
-std::string MatrixToString(const TMatrix& matrix, int width, int precision)
+String MatrixToString(const TMatrix& matrix, int width, int precision)
 {
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(precision);
-    for (size_t i = 0; i < matrix.size(); i++) {
-        for (size_t j = 0; j < matrix[i].size(); j++)
-            oss << std::setw(width) << matrix[i][j];
-        oss << "\n";
+    const TFormatSettings fs = MakeFormatSettings();
+    String text;
+
+    for (int i = 0; i < matrix.Length; i++) {
+        for (int j = 0; j < matrix[i].Length; j++) {
+            String num = FloatToStrF(static_cast<Extended>(matrix[i][j]),
+                                     TFloatFormat::ffFixed, 18, precision, fs);
+            if (num.Length() < width)                       // выравнивание по правому краю
+                num = StringOfChar(L' ', width - num.Length()) + num;
+            text += num;
+        }
+        text += sLineBreak;
     }
-    return oss.str();
+    return text;
 }
